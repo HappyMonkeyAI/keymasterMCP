@@ -70,7 +70,7 @@ class CreateClientResponse(BaseModel):
 
 class AddKeyRequest(BaseModel):
     service: str
-    api_key: str
+    api_key: Optional[str] = None
 
 
 class RotateKeyRequest(BaseModel):

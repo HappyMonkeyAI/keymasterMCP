@@ -118,6 +118,18 @@ class ProjectsController
             }
         }
 
+        $servicesResult = $this->api->getServices();
+        $allServices = $servicesResult['status'] === 200 ? $servicesResult['data'] : [];
+        
+        $assignedServices = $project['credentials'];
+        $serviceOptions = '';
+        foreach ($allServices as $s) {
+            if (!in_array($s['name'], $assignedServices)) {
+                $displayName = $s['display_name'] ?: $s['name'];
+                $serviceOptions .= "<option value=\"{$s['name']}\">{$displayName}</option>";
+            }
+        }
+
         $this->render("
         <div class=\"app-layout\">
             {$this->getSidebar('projects')}
@@ -150,11 +162,17 @@ class ProjectsController
 
                     <div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;\">
                         <div class=\"section-card\">
-                            <h3 class=\"sub-title\">Credentials Access</h3>
+                            <div style=\"display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;\">
+                                <h3 class=\"sub-title\" style=\"margin-bottom: 0;\">Credentials Access</h3>
+                                <a href=\"/credentials\" class=\"dim-text\" style=\"font-size: 0.75rem; text-decoration: none;\">Manage Vault &rarr;</a>
+                            </div>
                             <div class=\"tag-container\">{$creds}</div>
                             <form method=\"post\" action=\"/projects/{$id}/credentials\" class=\"inline-form\">
-                                <input type=\"text\" name=\"service\" placeholder=\"Service (e.g. openai)\" required>
-                                <button type=\"submit\" class=\"btn btn-primary\">Add</button>
+                                <select name=\"service\" style=\"flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.6rem; color: white; font-size: 0.85rem;\" required>
+                                    <option value=\"\" disabled selected>Assign a credential...</option>
+                                    {$serviceOptions}
+                                </select>
+                                <button type=\"submit\" class=\"btn btn-primary\">Assign</button>
                             </form>
                         </div>
                         <div class=\"section-card\">

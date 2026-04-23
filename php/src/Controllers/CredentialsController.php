@@ -73,36 +73,38 @@ class CredentialsController
                     <div class=\"breadcrumb\">
                         <a href=\"/credentials\" style=\"color: var(--text-dim); text-decoration: none;\">Vault</a>
                         <span style=\"margin: 0 0.5rem;\">/</span>
-                        <span>New Credential</span>
+                        <span>Define New Secret</span>
                     </div>
                 </header>
 
                 <div class=\"page-body\">
                     <div class=\"section-card\" style=\"max-width: 600px; margin: 0 auto;\">
-                        <h2 style=\"margin-bottom: 1.5rem;\">Add API Credential</h2>
+                        <h2 style=\"margin-bottom: 0.5rem;\">Define Secret Slot</h2>
+                        <p class=\"dim-text\" style=\"margin-bottom: 2rem;\">Create a definition that can be assigned to multiple projects.</p>
+                        
                         <form method=\"post\" action=\"/credentials\">
                             <div class=\"form-group\">
-                                <label>Service Identifier</label>
-                                <input type=\"text\" name=\"service\" placeholder=\"e.g. stripe, openai-prod\" required>
+                                <label>Service Identifier (Key name in .env)</label>
+                                <input type=\"text\" name=\"service\" placeholder=\"e.g. STRIPE_API_KEY, DATABASE_URL\" required>
                             </div>
                             <div class=\"form-group\">
-                                <label>Display Name (Optional)</label>
-                                <input type=\"text\" name=\"display_name\" placeholder=\"e.g. Stripe Production\">
+                                <label>Display Name (User friendly)</label>
+                                <input type=\"text\" name=\"display_name\" placeholder=\"e.g. Stripe Secret Key\">
                             </div>
                             <div class=\"form-group\">
-                                <label>Group</label>
+                                <label>Group / Category</label>
                                 <select name=\"group_id\" style=\"width: 100%; padding: 0.85rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 0.75rem; color: white;\">{$groupOptions}</select>
                             </div>
                             <div class=\"form-group\">
-                                <label>API Key / Secret</label>
-                                <input type=\"password\" name=\"api_key\" placeholder=\"••••••••••••••••\" required>
+                                <label>Secret Value (Optional - can be added later)</label>
+                                <input type=\"password\" name=\"api_key\" placeholder=\"••••••••••••••••\">
                             </div>
                             <div class=\"form-group\">
-                                <label>Description</label>
-                                <textarea name=\"description\" rows=\"2\" placeholder=\"What is this key used for?\"></textarea>
+                                <label>Administrative Description</label>
+                                <textarea name=\"description\" rows=\"2\" placeholder=\"What is this credential used for?\"></textarea>
                             </div>
                             <div style=\"margin-top: 2rem; display: flex; gap: 1rem;\">
-                                <button type=\"submit\" class=\"btn btn-primary\">Store in Vault</button>
+                                <button type=\"submit\" class=\"btn btn-primary\">Create Definition</button>
                                 <a href=\"/credentials\" class=\"btn btn-ghost\">Cancel</a>
                             </div>
                         </form>
@@ -115,21 +117,22 @@ class CredentialsController
     public function create()
     {
         $data = $_POST;
-        $vaultResult = $this->api->addKey($data['service'], $data['api_key']);
         
-        if ($vaultResult['status'] === 201) {
-            $this->api->registerCredential(
-                $data['service'],
-                $data['display_name'] ?? $data['service'],
-                !empty($data['group_id']) ? (int)$data['group_id'] : null,
-                $data['description'] ?? null
-            );
-            
-            header('Location: /credentials');
-            exit;
+        // Register Metadata First
+        $this->api->registerCredential(
+            $data['service'],
+            $data['display_name'] ?? $data['service'],
+            !empty($data['group_id']) ? (int)$data['group_id'] : null,
+            $data['description'] ?? null
+        );
+
+        // Add Key if provided
+        if (!empty($data['api_key'])) {
+            $this->api->addKey($data['service'], $data['api_key']);
         }
         
-        echo "Error adding key: " . ($vaultResult['data']['detail'] ?? 'Unknown error');
+        header('Location: /credentials');
+        exit;
     }
 
     public function createGroup()
