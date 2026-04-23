@@ -24,10 +24,11 @@ This starts:
 
 #### Via Web Dashboard
 
-1. Go to **Credentials** in the navigation
-2. Click **Add Key** next to a service
-3. Enter your API key (e.g., `sk-...` for OpenAI)
-4. Click **Add**
+1. Locate the **Resources** section in the sidebar.
+2. Click on **Credentials Vault**.
+3. Click **+ Add Credential** in the header.
+4. Enter the service identifier (e.g., `openai`), display name, and the secret key.
+5. Click **Store in Vault**.
 
 #### Via CLI
 
@@ -50,29 +51,27 @@ curl -X POST http://localhost:9000/api/clients \
 
 ### 3. Creating Projects
 
-Projects let you:
-- Assign specific credentials to each project
-- Whitelist IP addresses
-- Generate unique API keys per project
+Projects allow you to isolate credentials, manage whitelists, and generate unique access keys.
 
 #### Via Web Dashboard
 
-1. Go to **Projects**
-2. Click **New Project**
-3. Enter name and description
-4. Save
+1. Select **Projects** from the sidebar navigation.
+2. Click **+ New Project** in the header.
+3. Choose a project type (Secrets, PKI, KMS, or SSH) and enter a name/description.
+4. Click **Create Project**.
 
 #### Assign Credentials
 
-1. Click on a project to view details
-2. Under **Credentials**, select services from dropdown and click **Add**
-3. Only services with configured keys will appear
+1. Click on a project card from the dashboard.
+2. Under the **Secrets** tab, click **+ Add Secret**.
+3. Select a configured service from the vault to link it to this project.
 
 #### Add IP Whitelist
 
-1. Under **IP Whitelist**, enter an IP address (e.g., `192.168.1.100`)
-2. Click **Add IP**
-3. Requests from non-whitelisted IPs will be rejected
+1. In the project detail view, go to the **Network** or **Settings** tab.
+2. Enter an IP address or range.
+3. Click **Add IP**.
+4. Requests from non-whitelisted IPs will be rejected.
 
 ### 4. Using the Proxy
 
@@ -214,6 +213,8 @@ Add to `claude_desktop_config.json`:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
+| `/api/organization` | GET | Get organization details |
+| `/api/organization` | PUT | Update organization details |
 | `/api/services` | GET | List available services |
 | `/api/keys` | POST | Add API key |
 | `/api/keys/{service}` | DELETE | Delete API key |

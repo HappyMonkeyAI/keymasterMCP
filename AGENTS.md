@@ -27,7 +27,7 @@ keymasterMCP/
 │   ├── main.py             # FastAPI entry point
 │   ├── config.py           # Settings (pydantic)
 │   ├── vault.py            # Encrypted Fernet vault
-│   ├── database.py         # SQLite (clients, projects)
+│   ├── database.py         # SQLite (clients, projects, organization)
 │   ├── auth.py             # HMAC authentication
 │   ├── proxy.py            # SSE streaming proxy
 │   ├── mcp_server.py       # MCP tools
@@ -40,78 +40,74 @@ keymasterMCP/
 │   │       ├── AuthController.php
 │   │       ├── DashboardController.php
 │   │       ├── ProjectsController.php
-│   │       └── CredentialsController.php
+│   │       ├── CredentialsController.php
+│   │       ├── SettingsController.php
+│   │       └── AccessControlController.php
 │   └── public/index.php    # Router
 └── docker-compose.yml
 ```
 
 ## Adding New Services
 
-### 1. Add to Supported Services
+### 1. Store in Vault
+The vault now supports arbitrary service identifiers. Use `Vault.set_key(service, api_key)`.
 
-Edit `keymaster_mcp/vault.py`:
-
-```python
-SUPPORTED_SERVICES = ["openai", "anthropic", "github", "new-service"]
-```
-
-### 2. Add Proxy Endpoint
-
-Edit `keymaster_mcp/proxy.py`:
-
-```python
-async def proxy_new_service(self, method, path, headers, body):
-    # Forward to external API
-    target_url = f"https://api.newservice.com/v1{path}"
-    # ... implementation
-```
+### 2. Register Metadata
+Register the service in the `credential_registry` table to enable it in the dashboard.
 
 ## Database Schema
 
 ```sql
--- Clients (API consumers)
+-- Organization (Singleton metadata)
+CREATE TABLE organization (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Clients (API consumers with RBAC)
 CREATE TABLE clients (
-    client_id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id TEXT UNIQUE NOT NULL,
     client_secret_hash TEXT NOT NULL,
     name TEXT,
-    created_at TIMESTAMP,
+    email TEXT,
+    role TEXT DEFAULT 'developer',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_used_at TIMESTAMP
 );
 
--- Projects (isolated credential groups)
+-- Projects (isolated credential groups with types)
 CREATE TABLE projects (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    slug TEXT UNIQUE,
     description TEXT,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
+    type TEXT DEFAULT 'secrets',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Project credential assignments
 CREATE TABLE project_credentials (
-    project_id INTEGER,
-    service TEXT,
-    FOREIGN KEY (project_id) REFERENCES projects(id)
-);
-
--- IP whitelist per project
-CREATE TABLE project_ip_whitelist (
-    project_id INTEGER,
-    ip_address TEXT,
-    FOREIGN KEY (project_id) REFERENCES projects(id)
-);
-
--- Audit logs (Secret access tracking)
-CREATE TABLE audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    client_id TEXT,
-    project_id INTEGER,
-    service TEXT,
-    action TEXT NOT NULL,
-    ip_address TEXT,
-    status TEXT,
-    metadata TEXT
+    project_id INTEGER NOT NULL,
+    service TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id, service)
+);
+
+-- Credential Registry (Metadata for services)
+CREATE TABLE credential_registry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    group_id INTEGER,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES credential_groups(id) ON DELETE SET NULL
 );
 ```
 
@@ -120,15 +116,13 @@ CREATE TABLE audit_logs (
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/health` | None | Health check |
+| GET | `/api/organization` | HMAC | Get org details |
+| PUT | `/api/organization` | HMAC | Update org details |
 | GET | `/api/services` | HMAC | List vault services |
 | POST | `/api/keys` | HMAC | Add API key |
-| POST | `/api/keys/rotate` | HMAC | Rotate API key |
-| DELETE | `/api/keys/{service}` | HMAC | Delete API key |
 | GET | `/api/projects` | HMAC | List projects |
 | POST | `/api/projects` | HMAC | Create project |
 | GET | `/api/projects/{id}` | HMAC | Project details |
-| POST | `/api/projects/{id}/credentials` | HMAC | Add credential |
-| POST | `/api/projects/{id}/ips` | HMAC | Add IP whitelist |
 | POST | `/api/clients` | None | Create client (bootstrap) |
 | GET/POST | `/v1/chat/completions` | HMAC | Proxy to OpenAI |
 
