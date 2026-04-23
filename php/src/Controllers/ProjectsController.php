@@ -498,13 +498,13 @@ class ProjectsController
     <script>
         function toggleSecret(id, btn) {
             const el = document.getElementById(id);
-            const val = el.getAttribute('data-val');
-            if (btn.innerText === 'Show') {
+            const val = el.getAttribute(\'data-val\');
+            if (btn.innerText === \'Show\') {
                 el.innerText = val;
-                btn.innerText = 'Hide';
+                btn.innerText = \'Hide\';
             } else {
-                el.innerText = '•'.repeat(12);
-                btn.innerText = 'Show';
+                el.innerText = \'•\'.repeat(12);
+                btn.innerText = \'Show\';
             }
         }
     </script>
