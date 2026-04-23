@@ -228,4 +228,14 @@ class ApiService
             'slug' => $slug
         ]);
     }
+
+    public function getProjectSecrets(int $id): array
+    {
+        return $this->get("/api/projects/{$id}/secrets");
+    }
+
+    public function getProjectEnv(int $id): array
+    {
+        return $this->get("/api/projects/{$id}/env");
+    }
 }

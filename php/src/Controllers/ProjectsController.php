@@ -97,6 +97,27 @@ class ProjectsController
             </div>";
         }
 
+        $secretsResult = $this->api->getProjectSecrets($id);
+        $secrets = $secretsResult['status'] === 200 ? $secretsResult['data'] : [];
+        
+        $secretsHtml = '';
+        if (empty($secrets)) {
+            $secretsHtml = '<tr><td colspan="3" class="dim-text" style="text-align: center; padding: 2rem;">No secrets found for this project.</td></tr>';
+        } else {
+            foreach ($secrets as $key => $val) {
+                $masked = str_repeat('•', 12);
+                $secretsHtml .= "
+                <tr class=\"secret-row\">
+                    <td class=\"mono\">{$key}</td>
+                    <td class=\"mono\"><span class=\"masked-val\" id=\"secret-{$key}\" data-val=\"" . htmlspecialchars($val) . "\">{$masked}</span></td>
+                    <td style=\"text-align: right;\">
+                        <button class=\"btn btn-ghost btn-sm show-secret\" onclick=\"toggleSecret('secret-{$key}', this)\">Show</button>
+                        <button class=\"btn btn-ghost btn-sm\" onclick=\"navigator.clipboard.writeText('" . htmlspecialchars($val) . "')\">Copy</button>
+                    </td>
+                </tr>";
+            }
+        }
+
         $this->render("
         <div class=\"app-layout\">
             {$this->getSidebar('projects')}
@@ -107,6 +128,9 @@ class ProjectsController
                         <a href=\"/\" style=\"color: var(--text-dim); text-decoration: none;\">Projects</a>
                         <span style=\"margin: 0 0.5rem;\">/</span>
                         <span>{$project['name']}</span>
+                    </div>
+                    <div class=\"header-actions\">
+                        <a href=\"/projects/{$id}/env\" class=\"btn btn-ghost\" target=\"_blank\">Download .env</a>
                     </div>
                 </header>
 
@@ -140,6 +164,24 @@ class ProjectsController
                                 <input type=\"text\" name=\"ip_address\" placeholder=\"IP Address\" required>
                                 <button type=\"submit\" class=\"btn btn-primary\">Add</button>
                             </form>
+                        </div>
+                    </div>
+
+                    <div class=\"section-card\" style=\"margin-top: 2rem;\">
+                        <h3 class=\"sub-title\">Secrets Explorer</h3>
+                        <div class=\"table-container\">
+                            <table class=\"secrets-table\">
+                                <thead>
+                                    <tr>
+                                        <th>Key</th>
+                                        <th>Value</th>
+                                        <th style=\"text-align: right;\">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {$secretsHtml}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
@@ -432,6 +474,13 @@ class ProjectsController
         .inline-form { display: flex; gap: 0.5rem; }
         .inline-form input { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.4rem 0.75rem; color: white; font-size: 0.85rem; flex: 1; }
         
+        .table-container { overflow-x: auto; }
+        .secrets-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .secrets-table th { text-align: left; padding: 1rem; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 0.85rem; text-transform: uppercase; }
+        .secrets-table td { padding: 1rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+        .secret-row:hover { background: rgba(255,255,255,0.01); }
+        .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.75rem; margin-left: 0.5rem; }
+
         .form-group { margin-bottom: 1.5rem; }
         .form-group label { display: block; color: var(--text-dim); margin-bottom: 0.6rem; font-size: 0.9rem; font-weight: 500; }
         .form-group input, .form-group textarea { width: 100%; padding: 0.85rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 0.75rem; color: white; font-family: inherit; }
@@ -446,6 +495,19 @@ class ProjectsController
         .mono { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; }
         .dim-text { color: var(--text-dim); font-size: 0.9rem; }
     </style>
+    <script>
+        function toggleSecret(id, btn) {
+            const el = document.getElementById(id);
+            const val = el.getAttribute('data-val');
+            if (btn.innerText === 'Show') {
+                el.innerText = val;
+                btn.innerText = 'Hide';
+            } else {
+                el.innerText = '•'.repeat(12);
+                btn.innerText = 'Show';
+            }
+        }
+    </script>
 </head>
 <body>
     ' . $content . '
