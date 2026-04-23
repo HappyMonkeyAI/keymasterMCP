@@ -258,5 +258,3 @@ class DashboardController
 </html>';
     }
 }
-    }
-}
