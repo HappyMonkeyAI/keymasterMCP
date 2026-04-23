@@ -12,12 +12,29 @@ from keymaster_mcp.database import Database
 class ProxyEngine:
     """Streaming proxy engine for LLM API requests."""
 
-    OPENAI_BASE_URL = "https://api.openai.com/v1"
+    DEFAULT_BASE_URLS = {
+        "openai": "https://api.openai.com/v1",
+        "anthropic": "https://api.anthropic.com/v1",
+        "github": "https://api.github.com",
+    }
 
     def __init__(self):
         self.settings = get_settings()
         self.vault = Vault(self.settings.keymaster_vault_path)
         self.db = Database(self.settings.database_path)
+
+    async def _resolve_service_config(self, service: str) -> tuple[str, str]:
+        """Resolve the base URL and API key for a given service."""
+        # 1. Try to get custom URL from vault
+        base_url = self.vault.get_key(f"{service.upper()}_URL") or \
+                   self.vault.get_key(f"{service}_url") or \
+                   self.DEFAULT_BASE_URLS.get(service.lower())
+
+        # 2. Try to get API key from vault
+        api_key = self.vault.get_key(service.lower()) or \
+                  self.vault.get_key(f"{service.upper()}_API_KEY")
+
+        return base_url, api_key
 
     async def proxy_chat_completion(
         self,
@@ -25,12 +42,13 @@ class ProxyEngine:
         path: str,
         headers: dict,
         body: bytes,
+        service: str = "openai",
         client_id: str | None = None,
         project_id: int | None = None,
         ip_address: str | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """Proxy chat completion request with streaming support."""
-        api_key = self.vault.get_key("openai")
+        base_url, api_key = await self._resolve_service_config(service)
         
         # Log the attempt
         await self.db.init()
@@ -38,31 +56,37 @@ class ProxyEngine:
             action="PROXY_REQUEST",
             client_id=client_id,
             project_id=project_id,
-            service="openai",
+            service=service,
             ip_address=ip_address,
-            status="pending"
+            status="pending",
+            metadata={"target": base_url}
         )
+
+        if not base_url:
+            yield b'data: {"error": {"message": "Base URL not configured for service", "type": "invalid_request_error"}}\n\n'
+            return
 
         if not api_key:
             await self.db.log_action(
                 action="PROXY_ERROR",
                 client_id=client_id,
                 project_id=project_id,
-                service="openai",
+                service=service,
                 status="error",
-                metadata={"error": "OpenAI API key not configured"}
+                metadata={"error": f"{service} API key not configured"}
             )
-            yield b'data: {"error": {"message": "OpenAI API key not configured", "type": "invalid_request_error"}}\n\n'
+            yield f'data: {{"error": {{"message": "{service} API key not configured", "type": "invalid_request_error"}}}}\n\n'.encode()
             return
 
-        target_url = f"{self.OPENAI_BASE_URL}{path}"
+        target_url = f"{base_url.rstrip('/')}{path}"
         
         proxy_headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         
-        for header_name in ["Content-Type", "Accept"]:
+        # Forward relevant headers
+        for header_name in ["Content-Type", "Accept", "Anthropic-Version"]:
             if header_name in headers:
                 proxy_headers[header_name] = headers[header_name]
 
@@ -92,12 +116,13 @@ class ProxyEngine:
         path: str,
         headers: dict,
         body: bytes,
+        service: str = "openai",
         client_id: str | None = None,
         project_id: int | None = None,
         ip_address: str | None = None,
     ) -> AsyncGenerator[bytes, None]:
         """Proxy completion request with streaming support."""
-        return await self.proxy_chat_completion(method, path, headers, body, client_id, project_id, ip_address)
+        return await self.proxy_chat_completion(method, path, headers, body, service, client_id, project_id, ip_address)
 
 
 proxy_engine = ProxyEngine()

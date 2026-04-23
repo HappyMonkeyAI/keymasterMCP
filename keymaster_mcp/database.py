@@ -25,6 +25,8 @@ class Database:
                     client_id TEXT UNIQUE NOT NULL,
                     client_secret_hash TEXT NOT NULL,
                     name TEXT,
+                    email TEXT,
+                    role TEXT DEFAULT 'developer',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_used_at TIMESTAMP
                 )
@@ -34,9 +36,20 @@ class Database:
                 CREATE TABLE IF NOT EXISTS projects (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
+                    slug TEXT UNIQUE,
                     description TEXT,
+                    type TEXT DEFAULT 'secrets',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS organization (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    name TEXT NOT NULL,
+                    slug TEXT UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
@@ -84,18 +97,45 @@ class Database:
                     metadata TEXT
                 )
             """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS credential_groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS credential_registry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    service TEXT NOT NULL UNIQUE,
+                    display_name TEXT,
+                    group_id INTEGER,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (group_id) REFERENCES credential_groups(id) ON DELETE SET NULL
+                )
+            """)
+            
+            # Ensure organization exists
+            await db.execute("""
+                INSERT OR IGNORE INTO organization (id, name, slug) 
+                VALUES (1, 'Keymaster Org', 'keymaster-org')
+            """)
             
             await db.commit()
 
-    async def create_client(self, client_id: str, name: Optional[str] = None) -> tuple[str, str]:
+    async def create_client(self, client_id: str, name: Optional[str] = None, email: Optional[str] = None, role: str = 'developer') -> tuple[str, str]:
         """Create a new client. Returns (client_id, client_secret)."""
         client_secret = secrets.token_urlsafe(32)
         secret_hash = hashlib.sha256(client_secret.encode()).hexdigest()
         
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
-                "INSERT INTO clients (client_id, client_secret_hash, name) VALUES (?, ?, ?)",
-                (client_id, secret_hash, name or client_id)
+                "INSERT INTO clients (client_id, client_secret_hash, name, email, role) VALUES (?, ?, ?, ?, ?)",
+                (client_id, secret_hash, name or client_id, email, role)
             )
             await db.commit()
         
@@ -151,15 +191,16 @@ class Database:
             await db.commit()
             return cursor.rowcount > 0
 
-    async def create_project(self, name: str, description: Optional[str] = None) -> dict:
+    async def create_project(self, name: str, description: Optional[str] = None, project_type: str = 'secrets') -> dict:
         """Create a new project."""
+        slug = name.lower().replace(" ", "-").replace(".", "-")
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT INTO projects (name, description) VALUES (?, ?)",
-                (name, description)
+            cursor = await db.execute(
+                "INSERT INTO projects (name, slug, description, type) VALUES (?, ?, ?, ?)",
+                (name, slug, description, project_type)
             )
             await db.commit()
-            project_id = db.lastrowid
+            project_id = cursor.lastrowid
         
         return await self.get_project(project_id)
 
@@ -324,3 +365,64 @@ class Database:
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
+
+    async def create_credential_group(self, name: str, description: Optional[str] = None) -> int:
+        """Create a new credential group."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO credential_groups (name, description) VALUES (?, ?)",
+                (name, description)
+            )
+            await db.commit()
+            return cursor.lastrowid
+
+    async def list_credential_groups(self) -> list[dict]:
+        """List all credential groups."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM credential_groups ORDER BY name ASC") as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def register_credential(self, service: str, display_name: Optional[str] = None, group_id: Optional[int] = None, description: Optional[str] = None) -> None:
+        """Register a credential with metadata."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT OR REPLACE INTO credential_registry 
+                (service, display_name, group_id, description) 
+                VALUES (?, ?, ?, ?)
+                """,
+                (service, display_name or service, group_id, description)
+            )
+            await db.commit()
+
+    async def get_credential_registry(self) -> list[dict]:
+        """List all registered credentials with their groups."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            query = """
+                SELECT r.*, g.name as group_name 
+                FROM credential_registry r 
+                LEFT JOIN credential_groups g ON r.group_id = g.id
+                ORDER BY g.name ASC, r.display_name ASC
+            """
+            async with db.execute(query) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+    async def get_organization(self) -> dict:
+        """Get organization settings."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM organization WHERE id = 1") as cursor:
+                return dict(await cursor.fetchone())
+
+    async def update_organization(self, name: str, slug: str) -> dict:
+        """Update organization settings."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE organization SET name = ?, slug = ? WHERE id = 1",
+                (name, slug)
+            )
+            await db.commit()
+        return await self.get_organization()

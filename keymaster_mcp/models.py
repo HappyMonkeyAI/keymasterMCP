@@ -41,12 +41,17 @@ class CompletionRequest(BaseModel):
 
 class ServiceInfo(BaseModel):
     name: str
+    display_name: Optional[str] = None
+    group_name: Optional[str] = None
+    description: Optional[str] = None
     configured: bool
 
 
 class ClientInfo(BaseModel):
     client_id: str
     name: Optional[str]
+    email: Optional[str] = None
+    role: str = "developer"
     created_at: str
     last_used_at: Optional[str]
 
@@ -54,6 +59,8 @@ class ClientInfo(BaseModel):
 class CreateClientRequest(BaseModel):
     client_id: str
     name: Optional[str] = None
+    email: Optional[str] = None
+    role: str = "developer"
 
 
 class CreateClientResponse(BaseModel):
@@ -74,12 +81,15 @@ class RotateKeyRequest(BaseModel):
 class ProjectRequest(BaseModel):
     name: str
     description: Optional[str] = None
+    type: str = "secrets"
 
 
 class ProjectResponse(BaseModel):
     id: int
     name: str
+    slug: Optional[str] = None
     description: Optional[str]
+    type: str = "secrets"
     created_at: str
     updated_at: str
 
@@ -87,12 +97,25 @@ class ProjectResponse(BaseModel):
 class ProjectDetailResponse(BaseModel):
     id: int
     name: str
+    slug: Optional[str] = None
     description: Optional[str]
+    type: str = "secrets"
     created_at: str
     updated_at: str
     credentials: list[str]
     ips: list[str]
     api_key: Optional[str] = None
+
+
+class OrganizationInfo(BaseModel):
+    name: str
+    slug: str
+    created_at: str
+
+
+class UpdateOrganizationRequest(BaseModel):
+    name: str
+    slug: str
 
 
 class AddCredentialRequest(BaseModel):
@@ -101,3 +124,15 @@ class AddCredentialRequest(BaseModel):
 
 class AddIPRequest(BaseModel):
     ip_address: str
+
+
+class CredentialGroupRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class RegisterCredentialRequest(BaseModel):
+    service: str
+    display_name: Optional[str] = None
+    group_id: Optional[int] = None
+    description: Optional[str] = None

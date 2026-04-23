@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 class Vault:
     """Encrypted vault for storing API credentials using Fernet encryption."""
 
-    SUPPORTED_SERVICES = ["openai", "anthropic", "github"]
+    # No longer restricting to predefined services
 
     def __init__(self, vault_path: str = "./vault"):
         self.vault_path = Path(vault_path)
@@ -53,8 +53,7 @@ class Vault:
 
     def set_key(self, service: str, api_key: str, environment: Optional[str] = None) -> None:
         """Store an API key for a service and optional environment."""
-        if service not in self.SUPPORTED_SERVICES:
-            raise ValueError(f"Unsupported service: {service}. Supported: {self.SUPPORTED_SERVICES}")
+        # Any service name is now allowed
         
         keys = self._load_keys()
         storage_key = f"{service}:{environment}" if environment else service
@@ -84,9 +83,17 @@ class Vault:
         return False
 
     def list_services(self) -> list[str]:
-        """List all services with stored keys."""
+        """List all unique services with stored keys (excluding env notation)."""
         keys = self._load_keys()
-        return [s for s in self.SUPPORTED_SERVICES if s in keys]
+        services = set()
+        for k in keys.keys():
+            services.add(k.split(':')[0])
+        return sorted(list(services))
+
+    def list_all_keys(self) -> list[str]:
+        """List all literal storage keys (including environment suffixes)."""
+        keys = self._load_keys()
+        return sorted(list(keys.keys()))
 
     def has_key(self, service: str) -> bool:
         """Check if a service has a key configured."""

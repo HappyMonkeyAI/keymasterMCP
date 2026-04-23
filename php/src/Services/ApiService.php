@@ -99,16 +99,41 @@ class ApiService
         return $this->get('/api/services');
     }
 
+    public function getCredentialGroups(): array
+    {
+        return $this->get('/api/credentials/groups');
+    }
+
+    public function createCredentialGroup(string $name, ?string $description = null): array
+    {
+        return $this->post('/api/credentials/groups', [
+            'name' => $name,
+            'description' => $description
+        ]);
+    }
+
+    public function registerCredential(string $service, ?string $displayName = null, ?int $groupId = null, ?string $description = null): array
+    {
+        return $this->post('/api/credentials/register', [
+            'service' => $service,
+            'display_name' => $displayName,
+            'group_id' => $groupId,
+            'description' => $description
+        ]);
+    }
+
     public function getClients(): array
     {
         return $this->get('/api/clients');
     }
 
-    public function createClient(string $clientId, ?string $name = null): array
+    public function createClient(string $clientId, ?string $name = null, ?string $email = null, string $role = 'developer'): array
     {
         return $this->post('/api/clients', [
             'client_id' => $clientId,
-            'name' => $name
+            'name' => $name,
+            'email' => $email,
+            'role' => $role
         ]);
     }
 
@@ -122,19 +147,21 @@ class ApiService
         return $this->get("/api/projects/{$id}");
     }
 
-    public function createProject(string $name, ?string $description = null): array
+    public function createProject(string $name, ?string $description = null, string $type = 'secrets'): array
     {
         return $this->post('/api/projects', [
             'name' => $name,
-            'description' => $description
+            'description' => $description,
+            'type' => $type
         ]);
     }
 
-    public function updateProject(int $id, string $name, ?string $description = null): array
+    public function updateProject(int $id, string $name, ?string $description = null, string $type = 'secrets'): array
     {
         return $this->put("/api/projects/{$id}", [
             'name' => $name,
-            'description' => $description
+            'description' => $description,
+            'type' => $type
         ]);
     }
 
@@ -187,5 +214,18 @@ class ApiService
     public function deleteKey(string $service): array
     {
         return $this->delete("/api/keys/{$service}");
+    }
+
+    public function getOrganization(): array
+    {
+        return $this->get('/api/organization');
+    }
+
+    public function updateOrganization(string $name, string $slug): array
+    {
+        return $this->put('/api/organization', [
+            'name' => $name,
+            'slug' => $slug
+        ]);
     }
 }

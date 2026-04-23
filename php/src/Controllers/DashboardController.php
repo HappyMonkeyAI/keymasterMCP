@@ -12,73 +12,126 @@ class DashboardController
 
     public function index()
     {
-        $servicesResult = $this->api->getServices();
+        $orgResult = $this->api->getOrganization();
         $projectsResult = $this->api->getProjects();
+        $logsResult = $this->api->get('/api/audit-logs?limit=5');
         
-        $services = $servicesResult['status'] === 200 ? $servicesResult['data'] : [];
+        $org = $orgResult['status'] === 200 ? $orgResult['data'] : ['name' => 'Keymaster', 'slug' => 'keymaster'];
         $projects = $projectsResult['status'] === 200 ? $projectsResult['data'] : [];
-
-        $servicesHtml = '';
-        foreach ($services as $service) {
-            $status = $service['configured'] 
-                ? '<span class="status-chip status-success">● Active</span>' 
-                : '<span class="status-chip status-dim">○ Inactive</span>';
-            $servicesHtml .= "<tr><td><span class=\"mono\">{$service['name']}</span></td><td>{$status}</td></tr>";
-        }
+        $logs = $logsResult['status'] === 200 ? $logsResult['data'] : [];
 
         $projectsHtml = '';
         foreach ($projects as $project) {
-            $desc = htmlspecialchars($project['description'] ?? 'No description');
+            $type = ucfirst($project['type'] ?? 'secrets');
+            $icon = $this->getProjectIcon($project['type'] ?? 'secrets');
             $projectsHtml .= "
-            <tr>
-                <td><a href=\"/projects/{$project['id']}\" class=\"project-link\">{$project['name']}</a></td>
-                <td><span class=\"dim-text\">{$desc}</span></td>
-                <td><span class=\"mono dim-text\">" . date('Y-m-d', strtotime($project['created_at'])) . "</span></td>
-            </tr>";
+            <a href=\"/projects/{$project['id']}\" class=\"project-card\">
+                <div class=\"project-card-icon\">{$icon}</div>
+                <div class=\"project-card-content\">
+                    <h3>{$project['name']}</h3>
+                    <span class=\"project-type\">{$type}</span>
+                    <p>{$project['description']}</p>
+                </div>
+            </a>";
+        }
+
+        $logsHtml = '';
+        foreach ($logs as $log) {
+            $statusClass = $log['status'] === 'success' ? 'text-success' : 'text-danger';
+            $time = date('H:i:s', strtotime($log['timestamp']));
+            $logsHtml .= "
+            <div class=\"log-item\">
+                <span class=\"log-time\">{$time}</span>
+                <span class=\"log-action\">{$log['action']}</span>
+                <span class=\"log-status {$statusClass}\">{$log['status']}</span>
+            </div>";
         }
 
         $this->render("
-        <div class=\"dashboard-grid\">
-            <div class=\"section-card\">
-                <div class=\"card-header\">
-                    <h2 class=\"gradient-text\">Service Health</h2>
-                    <a href=\"/credentials\" class=\"btn btn-ghost\">Manage Keys</a>
+        <div class=\"app-layout\">
+            <aside class=\"sidebar\">
+                <div class=\"sidebar-header\">
+                    <div class=\"org-badge\">
+                        <span class=\"org-icon\">K</span>
+                        <div class=\"org-info\">
+                            <span class=\"org-name\">{$org['name']}</span>
+                            <span class=\"org-plan\">Free Plan</span>
+                        </div>
+                    </div>
                 </div>
-                <table>
-                    <thead><tr><th>Service</th><th>Status</th></tr></thead>
-                    <tbody>{$servicesHtml}</tbody>
-                </table>
-            </div>
-            <div class=\"section-card\">
-                <div class=\"card-header\">
-                    <h2 class=\"gradient-text\">Active Projects</h2>
-                    <a href=\"/projects/new\" class=\"btn btn-primary\">+ New Project</a>
+                <nav class=\"sidebar-nav\">
+                    <p class=\"nav-label\">Overview</p>
+                    <a href=\"/\" class=\"active\">Projects</a>
+                    <a href=\"/access-control\">Access Control</a>
+                    <a href=\"/audit-logs\">Audit Logs</a>
+                    <a href=\"/settings\">Organization Settings</a>
+                    
+                    <p class=\"nav-label\">Resources</p>
+                    <a href=\"/credentials\">Credentials Vault</a>
+                </nav>
+                <div class=\"sidebar-footer\">
+                    <a href=\"/logout\" class=\"logout-btn\">Logout</a>
                 </div>
-                <table>
-                    <thead><tr><th>Name</th><th>Description</th><th>Created</th></tr></thead>
-                    <tbody>{$projectsHtml}</tbody>
-                </table>
-            </div>
-        </div>");
+            </aside>
+
+            <main class=\"main-content\">
+                <header class=\"content-header\">
+                    <div class=\"breadcrumb\">
+                        <span>Projects</span>
+                    </div>
+                    <div class=\"header-actions\">
+                        <a href=\"/projects/new\" class=\"btn btn-primary\">+ Add New Project</a>
+                    </div>
+                </header>
+
+                <div class=\"page-body\">
+                    <div class=\"welcome-section\">
+                        <h1>My Projects</h1>
+                        <p>Your team's complete security toolkit - organized and ready when you need them.</p>
+                    </div>
+
+                    <div class=\"project-grid\">
+                        {$projectsHtml}
+                    </div>
+
+                    <div class=\"recent-activity section-card\" style=\"margin-top: 3rem;\">
+                        <h2 class=\"gradient-text\">Recent Activity</h2>
+                        <div class=\"activity-list\">
+                            {$logsHtml}
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>", $org['name']);
     }
 
-    private function render($content) {
+    private function getProjectIcon($type) {
+        return match($type) {
+            'secrets' => '🔒',
+            'pki' => '📜',
+            'kms' => '🔑',
+            'ssh' => '💻',
+            default => '📁'
+        };
+    }
+
+    private function render($content, $orgName = 'Keymaster') {
         echo '<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Keymaster</title>
+    <title>Dashboard - ' . $orgName . '</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #030712;
-            --card-bg: rgba(17, 24, 39, 0.6);
-            --border: rgba(255, 255, 255, 0.08);
+            --sidebar-bg: #090e1a;
+            --card-bg: rgba(17, 24, 39, 0.4);
+            --border: rgba(255, 255, 255, 0.06);
             --primary: #3b82f6;
-            --primary-glow: rgba(59, 130, 246, 0.4);
             --text-main: #f8fafc;
             --text-dim: #94a3b8;
             --success: #22c55e;
@@ -90,120 +143,120 @@ class DashboardController
             font-family: "Inter", sans-serif; 
             background: var(--bg); 
             color: var(--text-main); 
-            min-height: 100vh;
-            background-image: 
-                radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 40%),
-                radial-gradient(circle at 100% 100%, rgba(147, 51, 234, 0.1) 0%, transparent 40%);
-            line-height: 1.5;
+            height: 100vh;
+            overflow: hidden;
         }
 
-        .header { 
-            backdrop-filter: blur(12px);
-            background: rgba(3, 7, 18, 0.8);
-            padding: 1.25rem 2.5rem; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            border-bottom: 1px solid var(--border); 
-            position: sticky;
-            top: 0;
-            z-index: 100;
+        .app-layout { display: flex; height: 100vh; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
         }
-        .header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.025em; background: linear-gradient(to right, #fff, var(--text-dim)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .header nav a { color: var(--text-dim); text-decoration: none; margin-left: 2rem; font-size: 0.9rem; transition: color 0.2s; font-weight: 500; }
-        .header nav a:hover { color: var(--text-main); }
-
-        .container { padding: 3rem 2rem; max-width: 1400px; margin: 0 auto; }
-
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 2rem;
+        .org-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 0.75rem;
+            margin-bottom: 2rem;
         }
-
-        .section-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--border);
-            border-radius: 1rem;
-            padding: 2rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        .org-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
         }
+        .org-info { display: flex; flex-direction: column; }
+        .org-name { font-weight: 600; font-size: 0.9rem; }
+        .org-plan { font-size: 0.7rem; color: #fbbf24; font-weight: 600; text-transform: uppercase; }
 
-        .card-header {
+        .nav-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin: 1.5rem 0 0.75rem 0.75rem; font-weight: 600; }
+        .sidebar-nav a {
+            display: block;
+            padding: 0.6rem 0.75rem;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.9rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.25rem;
+            transition: all 0.2s;
+        }
+        .sidebar-nav a:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-main); }
+        .sidebar-nav a.active { background: rgba(59, 130, 246, 0.1); color: var(--primary); font-weight: 600; }
+
+        .sidebar-footer { margin-top: auto; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+        .logout-btn { color: var(--text-dim); text-decoration: none; font-size: 0.9rem; }
+
+        /* Main Content */
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background: var(--bg); }
+        .content-header {
+            padding: 1rem 2.5rem;
+            border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
+            background: rgba(3, 7, 18, 0.5);
+            backdrop-filter: blur(10px);
+            position: sticky; top: 0; z-index: 10;
         }
+        .breadcrumb { font-size: 0.9rem; color: var(--text-dim); }
 
-        .gradient-text {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #fff;
-        }
+        .page-body { padding: 3rem 2.5rem; max-width: 1200px; }
+        .welcome-section { margin-bottom: 3rem; }
+        .welcome-section h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .welcome-section p { color: var(--text-dim); }
 
-        .btn { 
-            padding: 0.6rem 1.25rem; 
-            border-radius: 0.75rem; 
-            font-weight: 600; 
-            cursor: pointer; 
-            text-decoration: none; 
-            font-size: 0.85rem; 
-            display: inline-flex;
-            align-items: center;
-            transition: all 0.2s;
-            border: none;
+        /* Project Grid */
+        .project-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
         }
-        .btn-primary { 
-            background: var(--primary); 
-            color: white; 
-            box-shadow: 0 0 20px var(--primary-glow);
+        .project-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            gap: 1rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 30px var(--primary-glow); }
-        .btn-ghost { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border: 1px solid var(--border); }
-        .btn-ghost:hover { background: rgba(255, 255, 255, 0.1); }
+        .project-card:hover { border-color: var(--primary); background: rgba(59, 130, 246, 0.05); transform: translateY(-2px); }
+        .project-card-icon { font-size: 1.5rem; padding-top: 0.25rem; }
+        .project-card-content h3 { font-size: 1.1rem; margin-bottom: 0.25rem; }
+        .project-type { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; display: block; }
+        .project-card-content p { font-size: 0.9rem; color: var(--text-dim); line-height: 1.5; }
 
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border); }
-        th { color: var(--text-dim); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        tr:hover { background: rgba(255, 255, 255, 0.02); }
-        
-        .mono { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; }
-        .dim-text { color: var(--text-dim); font-size: 0.9rem; }
-        
-        .project-link { color: var(--primary); text-decoration: none; font-weight: 600; transition: color 0.2s; }
-        .project-link:hover { color: #60a5fa; }
+        /* Utilities */
+        .btn { padding: 0.6rem 1.25rem; border-radius: 0.5rem; font-weight: 600; cursor: pointer; text-decoration: none; font-size: 0.85rem; border: none; }
+        .btn-primary { background: var(--primary); color: white; }
+        .text-success { color: var(--success); }
+        .text-danger { color: var(--danger); }
 
-        .status-chip {
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 0.25rem 0.75rem;
-            border-radius: 2rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-        .status-success { color: var(--success); background: rgba(34, 197, 94, 0.1); }
-        .status-dim { color: var(--text-dim); background: rgba(148, 163, 184, 0.1); }
-
-        @media (max-width: 1024px) {
-            .dashboard-grid { grid-template-columns: 1fr; }
-        }
+        .log-item { display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        .log-time { color: var(--text-dim); width: 80px; }
+        .log-action { flex: 1; font-weight: 500; }
+        .section-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 1rem; padding: 1.5rem; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Keymaster</h1>
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/credentials">Credentials</a>
-            <a href="/projects">Projects</a>
-            <a href="/logout">Logout</a>
-        </nav>
-    </div>
-    <div class="container">' . $content . '</div>
+    ' . $content . '
 </body>
 </html>';
+    }
+}
     }
 }

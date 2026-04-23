@@ -3,7 +3,7 @@ import json
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request, Response, Depends
+from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -17,6 +17,8 @@ from keymaster_mcp.models import (
     CreateClientResponse, AddKeyRequest, RotateKeyRequest,
     ProjectRequest, ProjectResponse, ProjectDetailResponse,
     AddCredentialRequest, AddIPRequest,
+    CredentialGroupRequest, RegisterCredentialRequest,
+    OrganizationInfo, UpdateOrganizationRequest,
 )
 
 
@@ -53,10 +55,77 @@ async def health_check():
 async def list_services():
     settings = get_settings()
     vault = Vault(settings.keymaster_vault_path)
-    return [
-        {"name": service, "configured": vault.has_key(service)}
-        for service in Vault.SUPPORTED_SERVICES
-    ]
+    db = Database(settings.database_path)
+    await db.init()
+    
+    # Get registered services from DB
+    registry = await db.get_credential_registry()
+    registered_services = {r["service"]: r for r in registry}
+    
+    # Get actual services in vault
+    vault_services = vault.list_services()
+    
+    # Combine
+    all_service_names = sorted(list(set(list(registered_services.keys()) + vault_services)))
+    
+    results = []
+    for name in all_service_names:
+        reg = registered_services.get(name, {})
+        results.append({
+            "name": name,
+            "display_name": reg.get("display_name") or name,
+            "group_name": reg.get("group_name"),
+            "description": reg.get("description"),
+            "configured": vault.has_key(name)
+        })
+    return results
+
+
+@app.get("/api/organization", response_model=OrganizationInfo)
+async def get_organization(_: str = Depends(require_hmac_auth)):
+    settings = get_settings()
+    db = Database(settings.database_path)
+    await db.init()
+    return await db.get_organization()
+
+
+@app.put("/api/organization", response_model=OrganizationInfo)
+async def update_organization(request: UpdateOrganizationRequest, _: str = Depends(require_hmac_auth)):
+    settings = get_settings()
+    db = Database(settings.database_path)
+    await db.init()
+    return await db.update_organization(request.name, request.slug)
+
+
+@app.get("/api/credentials/groups")
+async def list_credential_groups(_: str = Depends(require_hmac_auth)):
+    settings = get_settings()
+    db = Database(settings.database_path)
+    await db.init()
+    return await db.list_credential_groups()
+
+
+@app.post("/api/credentials/groups", status_code=201)
+async def create_credential_group(request: CredentialGroupRequest, _: str = Depends(require_hmac_auth)):
+    settings = get_settings()
+    db = Database(settings.database_path)
+    await db.init()
+    group_id = await db.create_credential_group(request.name, request.description)
+    return {"id": group_id, "name": request.name}
+
+
+@app.post("/api/credentials/register", status_code=201)
+async def register_credential(request: RegisterCredentialRequest, _: str = Depends(require_hmac_auth)):
+    settings = get_settings()
+    db = Database(settings.database_path)
+    await db.init()
+    await db.register_credential(
+        request.service,
+        request.display_name,
+        request.group_id,
+        request.description
+    )
+    return {"message": f"Credential metadata for '{request.service}' updated"}
 
 
 @app.post("/api/keys", status_code=201)
@@ -95,6 +164,8 @@ async def list_clients(_: str = Depends(require_hmac_auth)):
         {
             "client_id": c["client_id"],
             "name": c.get("name"),
+            "email": c.get("email"),
+            "role": c.get("role", "developer"),
             "created_at": c.get("created_at", ""),
             "last_used_at": c.get("last_used_at"),
         }
@@ -110,6 +181,8 @@ async def create_client(request: CreateClientRequest):
     client_id, client_secret = await db.create_client(
         request.client_id,
         request.name,
+        request.email,
+        request.role
     )
     return {"client_id": client_id, "client_secret": client_secret}
 
@@ -135,7 +208,9 @@ async def list_projects(_: str = Depends(require_hmac_auth)):
         {
             "id": p["id"],
             "name": p["name"],
+            "slug": p.get("slug"),
             "description": p.get("description"),
+            "type": p.get("type", "secrets"),
             "created_at": p.get("created_at", ""),
             "updated_at": p.get("updated_at", ""),
         }
@@ -157,7 +232,7 @@ async def create_project(request: ProjectRequest, _: str = Depends(require_hmac_
     settings = get_settings()
     db = Database(settings.database_path)
     await db.init()
-    project = await db.create_project(request.name, request.description)
+    project = await db.create_project(request.name, request.description, request.type)
     return project
 
 
@@ -176,7 +251,9 @@ async def get_project(project_id: int, _: str = Depends(require_hmac_auth)):
     return {
         "id": project["id"],
         "name": project["name"],
+        "slug": project.get("slug"),
         "description": project.get("description"),
+        "type": project.get("type", "secrets"),
         "created_at": project.get("created_at", ""),
         "updated_at": project.get("updated_at", ""),
         "credentials": [c["service"] for c in credentials],
@@ -266,12 +343,13 @@ async def remove_project_ip(project_id: int, ip_address: str, _: str = Depends(r
 
 @app.api_route("/v1/chat/completions", methods=["GET", "POST"])
 async def proxy_chat_completions(request: Request):
-    """Proxy OpenAI chat completions with streaming support."""
+    """Proxy chat completions with streaming support."""
     client_id = await require_hmac_auth(request)
     
     body = await request.body()
     headers = dict(request.headers)
     client_ip = request.client.host if request.client else "unknown"
+    service = headers.get("x-keymaster-service", "openai")
     
     async def generate() -> AsyncGenerator[dict, None]:
         async for chunk in proxy_engine.proxy_chat_completion(
@@ -279,6 +357,7 @@ async def proxy_chat_completions(request: Request):
             "/chat/completions",
             headers,
             body,
+            service=service,
             client_id=client_id,
             ip_address=client_ip
         ):
@@ -289,12 +368,13 @@ async def proxy_chat_completions(request: Request):
 
 @app.api_route("/v1/completions", methods=["GET", "POST"])
 async def proxy_completions(request: Request):
-    """Proxy OpenAI completions with streaming support."""
+    """Proxy completions with streaming support."""
     client_id = await require_hmac_auth(request)
     
     body = await request.body()
     headers = dict(request.headers)
     client_ip = request.client.host if request.client else "unknown"
+    service = headers.get("x-keymaster-service", "openai")
     
     async def generate() -> AsyncGenerator[dict, None]:
         async for chunk in proxy_engine.proxy_completion(
@@ -302,6 +382,32 @@ async def proxy_completions(request: Request):
             "/completions",
             headers,
             body,
+            service=service,
+            client_id=client_id,
+            ip_address=client_ip
+        ):
+            yield {"data": chunk.decode("utf-8", errors="replace")}
+
+    return EventSourceResponse(generate())
+
+
+@app.api_route("/v1/embeddings", methods=["POST"])
+async def proxy_embeddings(request: Request):
+    """Proxy embeddings requests."""
+    client_id = await require_hmac_auth(request)
+    
+    body = await request.body()
+    headers = dict(request.headers)
+    client_ip = request.client.host if request.client else "unknown"
+    service = headers.get("x-keymaster-service", "openai")
+    
+    async def generate() -> AsyncGenerator[dict, None]:
+        async for chunk in proxy_engine.proxy_chat_completion(
+            request.method,
+            "/embeddings",
+            headers,
+            body,
+            service=service,
             client_id=client_id,
             ip_address=client_ip
         ):

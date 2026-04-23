@@ -6,6 +6,8 @@ use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\ProjectsController;
 use App\Controllers\CredentialsController;
+use App\Controllers\SettingsController;
+use App\Controllers\AccessControlController;
 
 session_start();
 
@@ -119,6 +121,20 @@ if ($method === 'POST' && $uri === '/credentials') {
     exit;
 }
 
+if ($method === 'POST' && $uri === '/credentials/groups') {
+    requireAuth();
+    $controller = new CredentialsController($api);
+    $controller->createGroup();
+    exit;
+}
+
+if ($method === 'POST' && $uri === '/credentials/register') {
+    requireAuth();
+    $controller = new CredentialsController($api);
+    $controller->register();
+    exit;
+}
+
 if ($method === 'GET' && $uri === '/projects') {
     requireAuth();
     $controller = new ProjectsController($api);
@@ -200,6 +216,27 @@ if ($method === 'DELETE' && preg_match('#^/projects/(\d+)/ips/(.+)$#', $uri, $m)
     requireAuth();
     $controller = new ProjectsController($api);
     $controller->removeIp($m[1], $m[2]);
+    exit;
+}
+
+if ($method === 'GET' && $uri === '/settings') {
+    requireAuth();
+    $controller = new SettingsController($api);
+    echo $controller->index();
+    exit;
+}
+
+if ($method === 'POST' && $uri === '/settings' && isset($_POST['_METHOD']) && $_POST['_METHOD'] === 'PUT') {
+    requireAuth();
+    $controller = new SettingsController($api);
+    $controller->update();
+    exit;
+}
+
+if ($method === 'GET' && $uri === '/access-control') {
+    requireAuth();
+    $controller = new AccessControlController($api);
+    echo $controller->index();
     exit;
 }
 
