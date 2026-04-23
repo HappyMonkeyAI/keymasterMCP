@@ -2,9 +2,6 @@
 
 namespace App\Controllers;
 
-use Psr\Http\Message\ResponseInterface as Response;
-use Psr\Http\Message\ServerRequestInterface as Request;
-
 class DashboardController
 {
     private $api;
@@ -24,31 +21,44 @@ class DashboardController
         $servicesHtml = '';
         foreach ($services as $service) {
             $status = $service['configured'] 
-                ? '<span style="color: #22c55e;">● Configured</span>' 
-                : '<span style="color: #ef4444;">○ Not configured</span>';
-            $servicesHtml .= "<tr><td>{$service['name']}</td><td>{$status}</td></tr>";
+                ? '<span class="status-chip status-success">● Active</span>' 
+                : '<span class="status-chip status-dim">○ Inactive</span>';
+            $servicesHtml .= "<tr><td><span class=\"mono\">{$service['name']}</span></td><td>{$status}</td></tr>";
         }
 
         $projectsHtml = '';
         foreach ($projects as $project) {
-            $desc = htmlspecialchars($project['description'] ?? '-');
-            $projectsHtml .= "<tr><td><a href=\"/projects/{$project['id']}\" style=\"color: #3b82f6;\">{$project['name']}</a></td><td>{$desc}</td><td>{$project['created_at']}</td></tr>";
+            $desc = htmlspecialchars($project['description'] ?? 'No description');
+            $projectsHtml .= "
+            <tr>
+                <td><a href=\"/projects/{$project['id']}\" class=\"project-link\">{$project['name']}</a></td>
+                <td><span class=\"dim-text\">{$desc}</span></td>
+                <td><span class=\"mono dim-text\">" . date('Y-m-d', strtotime($project['created_at'])) . "</span></td>
+            </tr>";
         }
 
         $this->render("
-        <div class=\"section\">
-            <h2>Available Services <a href=\"/credentials\" class=\"btn\">Manage Credentials</a></h2>
-            <table>
-                <thead><tr><th>Service</th><th>Status</th></tr></thead>
-                <tbody>{$servicesHtml}</tbody>
-            </table>
-        </div>
-        <div class=\"section\">
-            <h2>Projects <a href=\"/projects/new\" class=\"btn\">New Project</a></h2>
-            <table>
-                <thead><tr><th>Name</th><th>Description</th><th>Created</th></tr></thead>
-                <tbody>{$projectsHtml}</tbody>
-            </table>
+        <div class=\"dashboard-grid\">
+            <div class=\"section-card\">
+                <div class=\"card-header\">
+                    <h2 class=\"gradient-text\">Service Health</h2>
+                    <a href=\"/credentials\" class=\"btn btn-ghost\">Manage Keys</a>
+                </div>
+                <table>
+                    <thead><tr><th>Service</th><th>Status</th></tr></thead>
+                    <tbody>{$servicesHtml}</tbody>
+                </table>
+            </div>
+            <div class=\"section-card\">
+                <div class=\"card-header\">
+                    <h2 class=\"gradient-text\">Active Projects</h2>
+                    <a href=\"/projects/new\" class=\"btn btn-primary\">+ New Project</a>
+                </div>
+                <table>
+                    <thead><tr><th>Name</th><th>Description</th><th>Created</th></tr></thead>
+                    <tbody>{$projectsHtml}</tbody>
+                </table>
+            </div>
         </div>");
     }
 
@@ -58,28 +68,133 @@ class DashboardController
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Keymaster MCP</title>
+    <title>Dashboard - Keymaster</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #030712;
+            --card-bg: rgba(17, 24, 39, 0.6);
+            --border: rgba(255, 255, 255, 0.08);
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.4);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --success: #22c55e;
+            --danger: #ef4444;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-        .header { background: #1e293b; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
-        .header h1 { font-size: 1.25rem; color: #f8fafc; }
-        .header a { color: #94a3b8; text-decoration: none; margin-left: 1.5rem; }
-        .header a:hover { color: #f8fafc; }
-        .container { padding: 2rem; max-width: 1400px; margin: 0 auto; }
-        .section { margin-bottom: 2rem; }
-        .section h2 { font-size: 1.125rem; margin-bottom: 1rem; color: #f8fafc; display: flex; justify-content: space-between; align-items: center; }
-        .btn { padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 0.875rem; }
-        .btn:hover { background: #2563eb; }
-        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-        th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #334155; }
-        th { background: #334155; color: #f8fafc; font-weight: 500; }
-        tr:hover { background: #273548; }
+        body { 
+            font-family: "Inter", sans-serif; 
+            background: var(--bg); 
+            color: var(--text-main); 
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 0% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(147, 51, 234, 0.1) 0%, transparent 40%);
+            line-height: 1.5;
+        }
+
+        .header { 
+            backdrop-filter: blur(12px);
+            background: rgba(3, 7, 18, 0.8);
+            padding: 1.25rem 2.5rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid var(--border); 
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.025em; background: linear-gradient(to right, #fff, var(--text-dim)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header nav a { color: var(--text-dim); text-decoration: none; margin-left: 2rem; font-size: 0.9rem; transition: color 0.2s; font-weight: 500; }
+        .header nav a:hover { color: var(--text-main); }
+
+        .container { padding: 3rem 2rem; max-width: 1400px; margin: 0 auto; }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+        }
+
+        .section-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .gradient-text {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .btn { 
+            padding: 0.6rem 1.25rem; 
+            border-radius: 0.75rem; 
+            font-weight: 600; 
+            cursor: pointer; 
+            text-decoration: none; 
+            font-size: 0.85rem; 
+            display: inline-flex;
+            align-items: center;
+            transition: all 0.2s;
+            border: none;
+        }
+        .btn-primary { 
+            background: var(--primary); 
+            color: white; 
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 30px var(--primary-glow); }
+        .btn-ghost { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border: 1px solid var(--border); }
+        .btn-ghost:hover { background: rgba(255, 255, 255, 0.1); }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-dim); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        tr:hover { background: rgba(255, 255, 255, 0.02); }
+        
+        .mono { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; }
+        .dim-text { color: var(--text-dim); font-size: 0.9rem; }
+        
+        .project-link { color: var(--primary); text-decoration: none; font-weight: 600; transition: color 0.2s; }
+        .project-link:hover { color: #60a5fa; }
+
+        .status-chip {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.25rem 0.75rem;
+            border-radius: 2rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .status-success { color: var(--success); background: rgba(34, 197, 94, 0.1); }
+        .status-dim { color: var(--text-dim); background: rgba(148, 163, 184, 0.1); }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Keymaster MCP</h1>
+        <h1>Keymaster</h1>
         <nav>
             <a href="/">Dashboard</a>
             <a href="/credentials">Credentials</a>
