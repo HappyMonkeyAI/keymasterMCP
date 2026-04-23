@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  keymaster-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9000:8000"
+    environment:
+      - KEYMASTER_VAULT_PATH=/data/vault
+      - DATABASE_PATH=/data/keymaster.db
+      - HMAC_SECRET=${HMAC_SECRET:-change-me-in-production}
+      - LOG_LEVEL=INFO
+    volumes:
+      - keymaster_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  keymaster-frontend:
+    image: php:8.2-cli
+    working_dir: /var/www
+    volumes:
+      - ./php:/var/www
+    ports:
+      - "9090:8080"
+    command: >
+      sh -c "apt-get update && apt-get install -y --no-install-recommends unzip git && 
+             curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && 
+             composer install --no-interaction --working-dir=/var/www &&
+             php -S 0.0.0.0:8080 -t public"
+    environment:
+      - KEYMASTER_API_URL=http://keymaster-api:8000
+      - KEYMASTER_API_KEY=${KEYMASTER_API_KEY:-admin-secret}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+
+volumes:
+  keymaster_data:
