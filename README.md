@@ -1,90 +1,78 @@
 # Keymaster MCP
 
-Secure API Credentials Vault and Proxy Server with Project-based Access Control.
+Secure API Credentials Vault with MCP-first ingestion and consumption (designed to replace `.env` usage for agents).
 
 ## Overview
 
-Keymaster MCP is a hybrid Python/PHP application that provides:
+Keymaster MCP is a secure API credentials vault designed primarily for **agent consumption** via MCP.
 
-- **Encrypted Vault**: Store API keys (OpenAI, Anthropic, GitHub) securely
-- **Project Isolation**: Assign credential subsets to different projects
-- **IP Whitelisting**: Restrict project access by IP address
-- **HMAC Authentication**: Time-based request signing with replay protection
-- **MCP Integration**: Expose vault tools to AI assistants
-- **Web Dashboard**: PHP frontend for easy management
+Core capabilities:
+
+- **MCP-first ingestion** — Projects and keys are created automatically by agents (not via dashboard)
+- **Encrypted Vault** — Fernet-encrypted storage of API keys
+- **Project Isolation** — Credentials scoped to projects with local `.keymaster/` bootstrap keys
+- **Consumption without `.env`** — Agents discover context and use keys via MCP tools instead of reading environment files
+- **Proxy layer** — `keymaster_proxy_request` lets agents make authenticated calls without ever seeing raw secrets
+- **IP Whitelisting + HMAC** — Existing security model retained
+
+The web dashboard is now secondary. The MCP server is the primary interface.
+
+## Key MCP Tools
+
+### Ingestion (agents create projects & keys)
+- `keymaster_init_project` — Bootstrap a new project + local `.keymaster/` key
+- `keymaster_register_key` — Register a credential for a service
+
+### Consumption (agents use keys instead of `.env`)
+- `keymaster_get_current_project` — Resolve project from local `.keymaster/`
+- `keymaster_get_key` — Check key existence (never returns raw secret)
+- `keymaster_proxy_request` — Make authenticated API calls (recommended)
 
 ## Architecture
 
 ```
-┌──────────────┐     HMAC Auth      ┌─────────────────┐     Proxy      ┌─────────────────┐
-│  AI Client   │ ─────────────────► │  Keymaster API  │ ─────────────► │  OpenAI/etc.    │
-│  (Cursor)    │     signature      │  (Python :8000) │   forward      │  API            │
-└──────────────┘                    └─────────────────┘                └─────────────────┘
-                                                      │
-                                             ┌────────┴────────┐
-                                             │   SQLite DB     │
-                                             │  (projects,     │
-                                             │   clients)      │
-                                             └─────────────────┘
-                                                      │
-                                             ┌────────▼────────┐
-                                             │  Web Dashboard  │
-                                             │  (PHP :8080)    │
-                                             └─────────────────┘
+┌─────────────────┐
+│   AI Agent      │
+│ (Hermes/Cursor) │
+└────────┬────────┘
+         │ MCP
+         ▼
+┌──────────────────────────────┐
+│      Keymaster MCP Server    │
+│  - Project context (.keymaster/)
+│  - Vault access
+│  - Proxy with injected keys   │
+└──────────────┬───────────────┘
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+   Encrypted Vault   SQLite (projects, assignments)
 ```
 
-## Quick Start
+## Local Project Bootstrap
 
-### Prerequisites
+When an agent runs `keymaster_init_project`, it creates:
 
-- Docker & Docker Compose
-- Or: Python 3.11+, PHP 8.1+
-
-### Run with Docker
-
-```bash
-# Clone and start
-git clone <repo> keymasterMCP
-cd keymasterMCP
-docker-compose up -d
-
-# Access
-# - API: http://localhost:9000
-# - Web: http://localhost:9090
-# - Health: http://localhost:9000/health
+```
+your-project/
+└── .keymaster/
+    └── project.key          # 0600, gitignored
 ```
 
-### Environment Variables
+Agents in that directory automatically inherit the project context.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KEYMASTER_VAULT_PATH` | `./vault` | Encrypted key storage path |
-| `DATABASE_PATH` | `./keymaster.db` | SQLite database path |
-| `HMAC_SECRET` | `change-me` | HMAC signing secret |
-| `ADMIN_USERNAME` | `admin` | Web dashboard login |
-| `ADMIN_PASSWORD` | `admin` | Web dashboard password |
+## Security
+
+- `.keymaster/` is protected by explicit nginx `deny all` rules (same as `.env`)
+- Raw secrets are never returned to MCP clients
+- All proxy requests are authorized against project + service assignments
 
 ## Development
 
 ```bash
-# Python backend only
+# Python backend
 pip install -e .
-keymaster-mcp          # Start API server
-keymaster-cli          # CLI for key management
-
-# PHP frontend only
-cd php
-composer install
-php -S localhost:8080 -t public
+keymaster-mcp
 ```
 
-## Tech Stack
-
-- **Backend**: Python 3.11+, FastAPI, SQLite
-- **Frontend**: PHP 8.1+, Slim Framework
-- **Security**: Fernet encryption, HMAC-SHA256
-- **Protocol**: MCP (Model Context Protocol)
-
-## License
-
-MIT
+See `CONTEXT.md` and `AGENTS.md` for detailed operating rules and agent workflows.
