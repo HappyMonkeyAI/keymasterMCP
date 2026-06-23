@@ -1,9 +1,9 @@
-from typing import Optional
+from typing import Optional, Any
 from mcp.server.fastmcp import FastMCP
 import asyncio
 import json
-import secrets
 from pathlib import Path
+import httpx
 
 from keymaster_mcp.vault import Vault
 from keymaster_mcp.database import Database
@@ -199,3 +199,129 @@ async def keymaster_list_project_keys(project_slug: str) -> dict:
 
     creds = await db.get_project_credentials(project["id"])
     return {"success": True, "project_slug": project_slug, "services": creds}
+
+
+# ---------------------------------------------------------------------------
+# Consumption layer (agents use these instead of .env)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def keymaster_get_current_project() -> dict:
+    """
+    Resolve the current project from the local .keymaster/ directory.
+    Agents call this first to know which project context they are in.
+    """
+    context = _get_local_project_context()
+    if not context:
+        return {"success": False, "error": "No .keymaster/ project context found in current directory"}
+    return {"success": True, **context}
+
+
+@mcp.tool()
+async def keymaster_get_key(service: str, project_slug: Optional[str] = None) -> dict:
+    """
+    Check if a key exists for a service in the current project context.
+    NEVER returns the raw secret. Agents should use proxy tools or
+    the MCP server to make authenticated requests instead of reading .env.
+    """
+    settings = get_settings()
+    vault = Vault(settings.keymaster_vault_path)
+    db = Database(settings.database_path)
+    await db.init()
+
+    if not project_slug:
+        context = _get_local_project_context()
+        if not context:
+            return {"success": False, "error": "No project context and no project_slug provided"}
+        project_slug = context.get("project_slug")
+
+    # Verify the project has this service assigned
+    projects = await db.list_projects()
+    project = next((p for p in projects if p["slug"] == project_slug), None)
+    if not project:
+        return {"success": False, "error": f"Project '{project_slug}' not found"}
+
+    creds = await db.get_project_credentials(project["id"])
+    has_service = any(c["service"] == service for c in creds)
+
+    if not has_service:
+        return {"success": False, "error": f"Service '{service}' not assigned to project '{project_slug}'"}
+
+    exists = vault.has_key(service)
+    return {
+        "success": True,
+        "service": service,
+        "project_slug": project_slug,
+        "exists": exists,
+        "message": "Use keymaster_proxy_request or MCP-native clients to consume this key securely."
+    }
+
+
+# ---------------------------------------------------------------------------
+# Proxy layer (recommended way for agents to use keys)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def keymaster_proxy_request(
+    service: str,
+    url: str,
+    method: str = "GET",
+    headers: Optional[dict] = None,
+    json_body: Optional[Any] = None,
+    project_slug: Optional[str] = None,
+) -> dict:
+    """
+    Make an authenticated API request using a stored key.
+    The raw key is never exposed to the calling agent.
+    This is the primary recommended consumption method.
+    """
+    settings = get_settings()
+    vault = Vault(settings.keymaster_vault_path)
+    db = Database(settings.database_path)
+    await db.init()
+
+    if not project_slug:
+        context = _get_local_project_context()
+        if not context:
+            return {"success": False, "error": "No project context found"}
+        project_slug = context.get("project_slug")
+
+    # Verify project + service
+    projects = await db.list_projects()
+    project = next((p for p in projects if p["slug"] == project_slug), None)
+    if not project:
+        return {"success": False, "error": f"Project '{project_slug}' not found"}
+
+    creds = await db.get_project_credentials(project["id"])
+    has_service = any(c["service"] == service for c in creds)
+    if not has_service:
+        return {"success": False, "error": f"Service '{service}' not assigned to project"}
+
+    api_key = vault.get_key(service)
+    if not api_key:
+        return {"success": False, "error": f"No key stored for service '{service}'"}
+
+    # Prepare headers
+    request_headers = headers or {}
+    # Common patterns for different providers
+    if service in ("openai", "anthropic"):
+        request_headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        request_headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(
+                method=method.upper(),
+                url=url,
+                headers=request_headers,
+                json=json_body,
+                timeout=30.0,
+            )
+            return {
+                "success": True,
+                "status_code": resp.status_code,
+                "body": resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text,
+            }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
